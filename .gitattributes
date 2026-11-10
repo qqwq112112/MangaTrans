@@ -1,0 +1,14 @@
+# Windows 批处理必须按原始字节存储，禁止 Git 做换行归一化。
+#
+# 两个原因，都实测过：
+#   1. cmd.exe 无法解析 LF-only 的批处理文件，会报
+#      "'MangaTrans' 不是内部或外部命令" 之类的错误；
+#   2. 这些 .bat 是 GBK 编码（cmd.exe 按原始字节解析脚本，UTF-8 会错）。
+#
+# 用 `-text` 而不是 `text eol=crlf`：后者会把 blob 归一化成 LF 再在检出时
+# 转回 CRLF，导致 GitHub 网页预览和 ZIP 下载拿到的仍是 LF-only 内容。
+# `-text` 让 blob 原样保存 CRLF，下载即用。
+*.bat -text
+*.cmd -text
+
+# 其余文本文件走系统默认（本机 core.autocrlf=true → 仓库内统一 LF）。

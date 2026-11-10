@@ -169,6 +169,10 @@ python main.py
 > `'到' is not recognized as an internal or external command`）。
 > 代价是 **GitHub 网页预览会显示乱码**，这不影响功能 —— 下载到本机双击即可正常运行。
 > 也可以直接用上面的 `python main.py` 启动，完全不经过 `.bat`。
+>
+> 另外这几个文件必须保持 **CRLF 换行**（仓库里由 `.gitattributes` 的 `*.bat -text`
+> 锁定）。LF-only 的批处理在 `cmd.exe` 下会直接报错，实测 `'MangaTrans' 不是内部或
+> 外部命令`。所以请**下载仓库 ZIP 或 `git clone`**，不要从网页复制粘贴脚本内容。
 
 ### 用 exe
 
@@ -409,6 +413,12 @@ For Japanese OCR: `pip install manga-ocr`
 > The trade-off is that **GitHub's web preview shows them as garbled text**; the
 > files still work fine once downloaded and double-clicked. You can also skip them
 > entirely and launch with `python main.py` as shown above.
+>
+> These files must also keep **CRLF** line endings, enforced by `*.bat -text` in
+> `.gitattributes`. LF-only batch files fail outright under `cmd.exe`
+> (`'MangaTrans' is not recognized as an internal or external command`), so grab
+> the repo **as a ZIP download or via `git clone`** rather than copy-pasting scripts
+> from the web view.
 
 From a build: run the exe. On first launch you are offered the ~400 MB Japanese OCR
 model download; you can skip it and type source text by hand instead.

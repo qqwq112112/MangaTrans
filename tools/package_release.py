@@ -27,6 +27,7 @@ SOURCE_FILES = [
     "main.py",
     "README.md",
     "LICENSE",
+    ".gitattributes",
     "启动.bat",
     "打包exe.bat",
     "打包exe-含日文OCR.bat",
