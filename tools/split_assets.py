@@ -31,7 +31,11 @@ ASSETS = ROOT / "release-assets"
 # 平台上限按 25 MB(10^6) 还是 25 MiB(2^20) 算，都不会超。
 PART_BYTES = 24_000_000
 
-MERGE_BAT = "合并并解压.bat"
+# GitHub 的网页上传接口只接受白名单扩展名：.part01 / .bat 都会被拒，
+# 报 "We don't support that file type."。分卷和脚本因此统一加 `.txt` 后缀
+# —— .txt 在列表里，且不影响 copy /b 拼接（内容仍是二进制）。
+PART_EXT = ".txt"
+MERGE_NAME = "合并并解压.bat" + PART_EXT
 
 BAT_HEADER = """@echo off
 chcp 936 >nul
@@ -44,7 +48,6 @@ echo   分卷上限 25 MB，必须全部下载才能还原
 echo ============================================
 echo.
 """
-
 BAT_FOOTER = """
 echo.
 echo ============================================
@@ -80,8 +83,13 @@ def sha256(path: pathlib.Path) -> str:
 
 
 def split_one(src: pathlib.Path) -> list[pathlib.Path]:
-    """切成 PART_BYTES 大小的分卷，返回分卷列表。"""
-    for old in src.parent.glob(src.name + ".part*"):
+    """切成 PART_BYTES 大小的分卷，返回分卷列表。
+
+    Output always lands in ASSETS (the upload folder), never beside `src`:
+    the source zips are parked under _original_zips/ and the parts must not
+    follow them in there.
+    """
+    for old in ASSETS.glob(src.name + ".part*"):
         old.unlink()
 
     total = src.stat().st_size
@@ -92,7 +100,7 @@ def split_one(src: pathlib.Path) -> list[pathlib.Path]:
             chunk = fh.read(PART_BYTES)
             if not chunk:
                 break
-            part = src.parent / f"{src.name}.part{index:02d}"
+            part = ASSETS / f"{src.name}.part{index:02d}{PART_EXT}"
             part.write_bytes(chunk)
             parts.append(part)
             index += 1
@@ -122,22 +130,34 @@ def verify_one(src: pathlib.Path, parts: list[pathlib.Path]) -> bool:
 
 
 def write_bat(items: list[tuple[pathlib.Path, list[pathlib.Path]]]) -> pathlib.Path:
-    """生成合并脚本：显式列出每个分卷，避免 copy 通配符的排序不确定性。"""
+    """生成合并脚本：用 PowerShell 按文件名排序拼接 + 解压。
+
+    `copy /b a.part01.txt+b.part02.txt` 也试过，但 cmd 的通配符形式
+    （`copy /b x.part*.txt out`）实测只复制了第一个文件，不可靠；
+    显式列举又会在卷数变化时失效。PowerShell 的 Sort-Object Name 配合
+    两位零填充（part01…part15），字典序即正确顺序。
+    """
     lines = [BAT_HEADER]
     for src, parts in items:
         stem = src.name
-        print_name = stem
-        lines.append(f'echo [1/2] 合并 {print_name} 的 {len(parts)} 个分卷…')
-        # copy /b "p1"+"p2"+... "out"  —— 显式拼接，顺序确定。
-        joined = "+".join(f'"{p.name}"' for p in parts)
-        lines.append(f'copy /b {joined} "{stem}" >nul')
+        folder = stem[:-4] if stem.lower().endswith(".zip") else stem
+        lines.append(f'echo [1/2] 合并 {stem} 的 {len(parts)} 个分卷…')
+        lines.append(
+            'powershell -NoProfile -ExecutionPolicy Bypass -Command "'
+            f"$o=[IO.File]::Create('%~dp0{stem}');"
+            f"Get-ChildItem '%~dp0{stem}.part*.txt' | Sort-Object Name | "
+            'ForEach-Object { $i=$_.OpenRead(); $i.CopyTo($o); $i.Close() };'
+            '$o.Close(); '
+            f'if ((Get-Item \'%~dp0{stem}\').Length -ne {src.stat().st_size}) '
+            '{ exit 1 }"'
+        )
         lines.append('if errorlevel 1 (')
-        lines.append(f'    echo    [失败] 合并 {print_name} 出错，请检查分卷是否齐全。')
+        lines.append(f'    echo    [失败] 合并出错，请检查 {stem} 的分卷是否齐全。')
         lines.append('    goto :error')
         lines.append(')')
-        lines.append(f'echo    [完成] {print_name}')
+        lines.append(f'echo    [完成] {stem}')
         lines.append('')
-        lines.append(f'echo [2/2] 解压 {print_name}…')
+        lines.append(f'echo [2/2] 解压 {stem}…')
         # The zip already contains a single top-level folder named after the
         # build, so extract into the current directory. Extracting into a
         # same-named subfolder would nest it one level deeper.
@@ -147,18 +167,27 @@ def write_bat(items: list[tuple[pathlib.Path, list[pathlib.Path]]]) -> pathlib.P
             '-DestinationPath \'%~dp0\' -Force"'
         )
         lines.append('if errorlevel 1 (')
-        lines.append(f'    echo    [失败] 解压 {print_name} 出错。')
+        lines.append(f'    echo    [失败] 解压 {stem} 出错。')
         lines.append('    goto :error')
         lines.append(')')
-        folder = stem[:-4] if stem.lower().endswith(".zip") else stem
         lines.append(f'echo    [完成] 已解压到 {folder}\\')
         lines.append('')
         lines.append(f'echo    SHA256（可用 certutil 复核）: {sha256(src)}')
         lines.append('')
 
-    bat = ASSETS / MERGE_BAT
+    bat = ASSETS / MERGE_NAME
     bat.write_text("\n".join(lines) + BAT_FOOTER, encoding="gbk", newline="\r\n")
     return bat
+
+
+def find_sources() -> list[pathlib.Path]:
+    """Original zips live either beside the assets or in the _original_zips/
+    holding pen (moved there so they cannot be uploaded by accident)."""
+    for folder in (ASSETS / "_original_zips", ASSETS):
+        found = sorted(folder.glob("*.zip"))
+        if found:
+            return found
+    return []
 
 
 def main() -> int:
@@ -167,7 +196,7 @@ def main() -> int:
                     help="只校验已有分卷，不重新切分")
     args = ap.parse_args()
 
-    sources = sorted(ASSETS.glob("*.zip"))
+    sources = find_sources()
     if not sources:
         print(f"{ASSETS} 下没有 zip，先跑 tools/package_binaries.py")
         return 1
@@ -175,11 +204,11 @@ def main() -> int:
     items: list[tuple[pathlib.Path, list[pathlib.Path]]] = []
     ok = True
 
-    print(f"分卷上限 {PART_BYTES:,} 字节")
+    print(f"分卷上限 {PART_BYTES:,} 字节，扩展名 {PART_EXT}")
     for src in sources:
         print()
         if args.verify:
-            parts = sorted(ASSETS.glob(src.name + ".part*"))
+            parts = sorted(ASSETS.glob(src.name + ".part*" + PART_EXT))
             if not parts:
                 print(f"  {src.name}: 没有分卷，跳过")
                 continue
@@ -191,7 +220,7 @@ def main() -> int:
 
     if not args.verify:
         bat = write_bat(items)
-        print(f"\n已生成 {bat.name}")
+        print(f"\n已生成 {bat.name}（下载后去掉末尾的 .txt 再双击）")
 
     total_parts = sum(len(p) for _, p in items)
     biggest = max((q.stat().st_size for _, ps in items for q in ps), default=0)
