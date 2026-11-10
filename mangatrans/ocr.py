@@ -68,6 +68,16 @@ def manga_ocr_available() -> bool:
     return importlib.util.find_spec("manga_ocr") is not None
 
 
+def manga_ocr_usable() -> bool:
+    """Whether Japanese OCR can actually run right now.
+
+    The bundled flag alone is misleading in the slim/portable builds: manga_ocr
+    lives in the user's Python, not in the frozen exe, so `find_spec` reports
+    False there even though the external worker works fine.
+    """
+    return manga_ocr_available() or _external_worker_ready()
+
+
 def windows_ocr_available() -> bool:
     return os.name == "nt" and resource_path("tools/win_ocr.ps1").exists()
 

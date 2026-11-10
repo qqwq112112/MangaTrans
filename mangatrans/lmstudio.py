@@ -13,6 +13,41 @@ from .textrender import normalize_punctuation
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
 
+# Local runtimes must never go through a system proxy. `requests` honours
+# HTTP(S)_PROXY and the Windows registry by default (trust_env=True), so a VPN
+# or any other global proxy hijacks 127.0.0.1:1234 and LM Studio answers 502.
+# Verified on this machine: with a global proxy up, a plain requests.get against
+# a closed local port returned HTTP 502 instead of ConnectionError.
+# Loopback and LAN addresses are treated as local for proxy bypass.
+_LOCAL_HOST_RE = re.compile(
+    r"^https?://(127\.\d+\.\d+\.\d+|localhost|\[::1\]|0\.0\.0\.0|"
+    r"10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|"
+    r"172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)",
+    re.IGNORECASE,
+)
+
+
+def _session_for(url: str):
+    """Pick a client that bypasses the system proxy for local endpoints.
+
+    A fresh Session per call rather than a shared one: requests.Session is not
+    thread-safe and batch translation runs several workers in a QThreadPool.
+    """
+    if _LOCAL_HOST_RE.match(url or ""):
+        session = requests.Session()
+        session.trust_env = False
+        return session
+    return requests
+
+
+def _get(url: str, **kwargs) -> requests.Response:
+    return _session_for(url).get(url, **kwargs)
+
+
+def _post(url: str, **kwargs) -> requests.Response:
+    return _session_for(url).post(url, **kwargs)
+
+
 # LM Studio picks another port when the default is taken (e.g. 1235).
 CANDIDATE_PORTS = (1234, 1235, 1236, 1237, 8080, 8000)
 
@@ -58,7 +93,7 @@ def _http_hint(status: int, body: str, service: str) -> str:
 
 
 def _models_at(base: str, timeout: float, api_key: str = "") -> list[str]:
-    resp = requests.get(f"{base}/models", timeout=timeout,
+    resp = _get(f"{base}/models", timeout=timeout,
                         headers=_auth_headers(api_key))
     resp.raise_for_status()
     data = resp.json()
@@ -272,7 +307,7 @@ def _post_stream(url: str, payload: dict, headers: dict, timeout: float,
     headers.setdefault("Accept", "text/event-stream")
     payload = dict(payload)
     payload["stream"] = True
-    resp = requests.post(url, json=payload, headers=headers, timeout=timeout,
+    resp = _post(url, json=payload, headers=headers, timeout=timeout,
                          stream=True)
     if resp.status_code >= 400:
         detail = resp.text[:400] if resp.text else ""
@@ -503,7 +538,7 @@ def translate_text(
     url = _endpoint(base, api_style)
 
     try:
-        resp = requests.post(url, json=body, headers=headers, timeout=timeout)
+        resp = _post(url, json=body, headers=headers, timeout=timeout)
     except requests.exceptions.ConnectionError as exc:
         raise LMStudioError(_conn_hint(service)) from exc
     except requests.exceptions.Timeout as exc:
@@ -538,7 +573,7 @@ def test_connection(base_url: str, timeout: float = 6.0, api_key: str = "",
         # Anthropic has no /models endpoint; a HEAD-ish call is enough to prove
         # the key and network work, so report success with an empty list.
         try:
-            requests.get(base_url.rstrip("/") + "/messages", timeout=timeout,
+            _get(base_url.rstrip("/") + "/messages", timeout=timeout,
                          headers=_headers_for("anthropic", api_key))
         except requests.exceptions.ConnectionError:
             return False, _conn_hint(service), []

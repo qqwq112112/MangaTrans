@@ -170,13 +170,35 @@ def build(name: str, spec: dict) -> int:
     return result.returncode
 
 
+# Portable mode is decided by a portable.txt beside the exe (see
+# mangatrans/config.py::portable_root). PyInstaller never emits it, so without
+# this the "portable" build silently falls back to writing %APPDATA% and a user
+# carrying the folder to another machine loses their progress.
+PORTABLE_MARKER = (
+    "Portable mode marker\n"
+    "\n"
+    "All settings, translation progress and caches are stored in the data folder\n"
+    "next to this file, so the whole directory can be copied to another machine\n"
+    "or a USB stick and keeps working.\n"
+    "\n"
+    "Remove this file to fall back to:\n"
+    "    %APPDATA%/MangaTrans\n"
+)
+
+
+def write_portable_marker(folder: pathlib.Path) -> None:
+    marker = folder / "portable.txt"
+    marker.write_text(PORTABLE_MARKER, encoding="utf-8-sig")
+
+
 def deploy_portable() -> None:
     src = DIST / "MangaTrans-Portable"
     if not src.exists():
         print("  便携版构建缺失，跳过部署")
         return
+    write_portable_marker(src)
     PORTABLE_DEST.mkdir(parents=True, exist_ok=True)
-    for item in (src / "MangaTrans-Portable.exe",):
+    for item in (src / "MangaTrans-Portable.exe", src / "portable.txt"):
         (PORTABLE_DEST / item.name).write_bytes(item.read_bytes())
     internal_src = src / "_internal"
     internal_dst = PORTABLE_DEST / "_internal"
@@ -225,6 +247,12 @@ def main() -> int:
     for name, spec in TARGETS.items():
         exe = DIST / name / f"{name}.exe"
         ok &= verify(exe, spec["label"], source_mtime)
+
+    marker_path = DIST / "MangaTrans-Portable" / "portable.txt"
+    if not marker_path.exists():
+        print("  [BAD] 便携版缺少 portable.txt（会退化成写 %APPDATA%）")
+        ok = False
+
     portable_exe = PORTABLE_DEST / "MangaTrans-Portable.exe"
     if portable_exe.exists():
         ok &= verify(portable_exe, "便携版(已部署)", source_mtime)

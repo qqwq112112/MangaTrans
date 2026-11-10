@@ -1,0 +1,71 @@
+﻿MangaTrans Portable —— 免安装、免依赖
+=====================================
+
+双击 MangaTrans-Portable.exe 即可运行，不需要安装 Python、PySide6 或任何运行库。
+
+
+一、为什么是"免依赖"
+--------------------
+本目录里的 _internal 文件夹已包含 Python 解释器、Qt 运行库、图像编码器等
+全部运行所需组件。分发时请把【整个文件夹】一起打包，不要只发 exe
+（只发 exe 会缺少 _internal，无法启动）。
+
+
+二、数据存在哪里（便携模式）
+----------------------------
+本目录里有 portable.txt 标记文件，因此所有数据都写在：
+
+    .\data\config.json        设置（含各供应商的配置）
+    .\data\projects.json      项目库与翻译进度
+    .\data\projects.json.bak  上一版备份
+    .\data\thumbs\            封面缩略图
+    .\data\cache\             压缩包解压缓存
+    .\data\last_error.txt     异常日志（出现时才有）
+
+搬到别的电脑或 U 盘时，整个文件夹复制过去就能继续用，进度不会丢。
+不想用便携模式：删除 portable.txt，数据会改存到 %APPDATA%\MangaTrans。
+
+
+三、首次使用要配模型
+--------------------
+程序本身不含翻译模型。启动后打开 设置 → 翻译模型：
+
+【本地运行时】（数据不出本机，推荐）
+    · 本地 · LM Studio     —— LM Studio → Developer → Start Server
+    · 本地 · Ollama        —— ollama serve，先 ollama pull 一个模型
+    · 本地 · llama.cpp     —— llama-server -m 模型.gguf --port 8080
+    · 本地 · KoboldCpp     —— 启动后开启 OpenAI 兼容接口
+    · 本地 · MLX           —— mlx_lm.server（仅 macOS）
+    · 本地 · vLLM          —— vllm serve 模型 --port 8000
+
+【云端 API】（需要填该平台的 API Key）
+    OpenAI / Anthropic Claude / DeepSeek / Kimi / 通义千问 /
+    智谱 GLM / MiniMax / Google Gemini / 硅基流动 / 自定义兼容接口
+
+每个供应商的地址、Key、模型都各自独立保存，随时切换不会互相覆盖。
+
+
+四、日文 OCR
+------------
+日文识别由 manga-ocr 完成，模型权重（约 400 MB）默认不在包内，
+第一次识别时会下载到：
+
+    .\data\..\..\.cache\huggingface\   （便携模式下位于用户目录）
+    或 %USERPROFILE%\.cache\huggingface\hub\models--kha-white--manga-ocr-base\
+
+连不上 HuggingFace 时，可先设镜像再启动：
+
+    set HF_ENDPOINT=https://hf-mirror.com
+    MangaTrans-Portable.exe
+
+不装 OCR 也能用：直接手动输入原文即可。
+
+
+五、开源声明
+------------
+本工具开源免费，无需登录、注册，也没有账号体系，不收集任何个人信息。
+唯一需要配置的是翻译模型；用云端 API 时只有台词文本会发到你选的那家平台。
+
+作者：DeepSeek-V4.1-Flash-1017
+GitHub：qqwq112112
+邮箱：qqwq112112@Outlook.com

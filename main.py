@@ -40,7 +40,10 @@ def _selfcheck_ocr() -> int:
     app = QApplication.instance() or QApplication([])   # QImage needs an app
 
     emit(f"OCR 后端：{ocr.describe_backends()}")
-    emit(f"manga-ocr 可用：{ocr.manga_ocr_available()}")
+    # Report "usable", not "bundled": the slim/portable builds call manga-ocr in
+    # an external worker, so importing it inside the frozen exe is expected to
+    # fail even when Japanese OCR works.
+    emit(f"manga-ocr 可用：{ocr.manga_ocr_usable()}（内置={ocr.manga_ocr_available()}）")
     emit(f"Windows OCR 可用：{ocr.windows_ocr_available()}")
 
     target = None

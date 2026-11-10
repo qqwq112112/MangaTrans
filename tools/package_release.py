@@ -28,6 +28,8 @@ SOURCE_FILES = [
     "README.md",
     "LICENSE",
     ".gitattributes",
+    "使用说明.txt",
+    "MangaTrans-OCR-使用指南.md",
     "启动.bat",
     "打包exe.bat",
     "打包exe-含日文OCR.bat",
@@ -41,6 +43,8 @@ TOOL_FILES = [
 # Scripts useful to a contributor but not required to run the app.
 DEV_TOOLS = [
     "build_all.py",
+    "package_binaries.py",
+    "check_assets.py",
     "make_sample.py",
     "make_sample_ja.py",
     "selftest.py",
