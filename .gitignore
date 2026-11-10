@@ -1,0 +1,22 @@
+﻿# ---- user data / credentials (never commit) ----
+data/
+config.json
+projects.json
+projects.json.bak
+ocr_worker.json
+last_error.txt
+selfcheck_ocr.txt
+*.log
+
+# ---- build output ----
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- generated locally ----
+release/
+screenshots/
+samples/
