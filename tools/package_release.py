@@ -45,6 +45,8 @@ DEV_TOOLS = [
     "build_all.py",
     "package_binaries.py",
     "split_assets.py",
+    "upload_assets.sh",
+    "verify_release.py",
     "check_assets.py",
     "make_sample.py",
     "make_sample_ja.py",

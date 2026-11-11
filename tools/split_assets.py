@@ -136,28 +136,44 @@ def write_bat(items: list[tuple[pathlib.Path, list[pathlib.Path]]]) -> pathlib.P
     （`copy /b x.part*.txt out`）实测只复制了第一个文件，不可靠；
     显式列举又会在卷数变化时失效。PowerShell 的 Sort-Object Name 配合
     两位零填充（part01…part15），字典序即正确顺序。
+
+    每个版本是独立的一组：用户通常只下其中一个，所以某组的分卷一个都没
+    下载时应当跳过而不是报错；只下了半组才算失败。
     """
     lines = [BAT_HEADER]
-    for src, parts in items:
+    lines.append('echo 脚本会自动识别当前文件夹里有哪些版本，无需三个都下载。')
+    lines.append('echo.')
+    lines.append('set "DONE=0"')
+    lines.append('')
+
+    for idx, (src, parts) in enumerate(items, start=1):
         stem = src.name
         folder = stem[:-4] if stem.lower().endswith(".zip") else stem
-        lines.append(f'echo [1/2] 合并 {stem} 的 {len(parts)} 个分卷…')
+        first_part = parts[0].name
+        skip = f"skip{idx}"
+
+        # 一个分卷都没下 → 安静跳过这一组。
+        lines.append(f'if not exist "%~dp0{first_part}" goto :{skip}')
+        lines.append(f'echo [合并] {stem}（{len(parts)} 卷）')
         lines.append(
             'powershell -NoProfile -ExecutionPolicy Bypass -Command "'
+            f"$f=Get-ChildItem '%~dp0{stem}.part*.txt';"
+            f"if ($f.Count -ne {len(parts)}) {{ Write-Host '   分卷数量不对，"
+            f"应为 {len(parts)} 个，实际' $f.Count; exit 1 }};"
             f"$o=[IO.File]::Create('%~dp0{stem}');"
-            f"Get-ChildItem '%~dp0{stem}.part*.txt' | Sort-Object Name | "
-            'ForEach-Object { $i=$_.OpenRead(); $i.CopyTo($o); $i.Close() };'
+            "$f | Sort-Object Name | ForEach-Object { "
+            '$i=$_.OpenRead(); $i.CopyTo($o); $i.Close() };'
             '$o.Close(); '
             f'if ((Get-Item \'%~dp0{stem}\').Length -ne {src.stat().st_size}) '
             '{ exit 1 }"'
         )
         lines.append('if errorlevel 1 (')
-        lines.append(f'    echo    [失败] 合并出错，请检查 {stem} 的分卷是否齐全。')
+        lines.append(f'    echo    [失败] {stem} 合并出错，请确认 {len(parts)} 个分卷齐全。')
         lines.append('    goto :error')
         lines.append(')')
         lines.append(f'echo    [完成] {stem}')
         lines.append('')
-        lines.append(f'echo [2/2] 解压 {stem}…')
+        lines.append(f'echo [解压] {stem}…')
         # The zip already contains a single top-level folder named after the
         # build, so extract into the current directory. Extracting into a
         # same-named subfolder would nest it one level deeper.
@@ -172,8 +188,19 @@ def write_bat(items: list[tuple[pathlib.Path, list[pathlib.Path]]]) -> pathlib.P
         lines.append(')')
         lines.append(f'echo    [完成] 已解压到 {folder}\\')
         lines.append('')
-        lines.append(f'echo    SHA256（可用 certutil 复核）: {sha256(src)}')
+        lines.append(f'echo    SHA256: {sha256(src)}')
+        lines.append('set "DONE=1"')
         lines.append('')
+        lines.append(f':{skip}')
+        lines.append('')
+
+    # 一组都没匹配上说明文件名或路径不对，明确提示，避免静默"成功"。
+    lines.append('if "%DONE%"=="0" (')
+    lines.append('    echo [提示] 当前文件夹里没有找到任何 MangaTrans-*.zip.part01.txt')
+    lines.append('    echo        请确认分卷与本脚本在同一文件夹，且文件名未被改动。')
+    lines.append('    goto :error')
+    lines.append(')')
+    lines.append('')
 
     bat = ASSETS / MERGE_NAME
     bat.write_text("\n".join(lines) + BAT_FOOTER, encoding="gbk", newline="\r\n")
